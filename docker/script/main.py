@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import logging
 import jax.numpy as jnp
 from io import BytesIO
@@ -11,10 +12,10 @@ def main(bucket, key):
     seed = 19590414
     rng_key = random.PRNGKey(seed)
     columns = 1000
-    rows = 100000
+    rows = 500000
     data = random.normal(key=rng_key, shape=(rows, columns))
     bytes_ = BytesIO()
-    loaded_data = jnp.save(bytes_, data, allow_pickle=False)
+    jnp.save(bytes_, data, allow_pickle=False)
     bytes_.seek(0)
     client.upload_fileobj(
         Fileobj=bytes_,
