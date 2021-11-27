@@ -12,7 +12,6 @@ from aws_cdk import (
 )
 from aws_cdk.aws_ecr_assets import DockerImageAsset
 
-functionName = "batch-lambda"
 jobDefinitionName = "job-definition"
 computeEnvironmentName = "compute-environment"
 jobQueueName = "job-queue"
@@ -94,12 +93,12 @@ class AwsBatch101Stack(core.Stack):
             roles=[instanceRole.role_name]
         )
         resource_requirement = [
-            batch.CfnJobDefinition.ResourceRequirementProperty(type='MEMORY', value='7168'),
+            batch.CfnJobDefinition.ResourceRequirementProperty(type='MEMORY', value='4096'),
             batch.CfnJobDefinition.ResourceRequirementProperty(type='VCPU', value='1')
         ]
 
         container_properties = batch.CfnJobDefinition.ContainerPropertiesProperty(
-            command=["main.py", "Ref::bucket", "Ref::job_name"],
+            command=["main.py", "Ref::bucket", "Ref::key", "Ref::direction"],
             environment=[
                 batch.CfnJobDefinition.EnvironmentProperty(
                     name="BATCH_FILE_TYPE", value="zip"),
@@ -107,7 +106,7 @@ class AwsBatch101Stack(core.Stack):
                     name="BATCH_FILE_S3_URL", value=script_asset.s3_object_url)
             ],
             image=asset.image_uri,
-            resource_requirement=resource_requirement
+            resource_requirements=resource_requirement
         )
 
         jobDefinition = batch.CfnJobDefinition(
@@ -120,8 +119,9 @@ class AwsBatch101Stack(core.Stack):
             timeout=batch.CfnJobDefinition.TimeoutProperty(
                 attempt_duration_seconds=60),
             parameters={
-                "job_name": "no one",
-                "bucket": bucket.bucket_name
+                "key": "no one",
+                "bucket": bucket.bucket_name,
+                "direction": "upload"
             }
         )
 
@@ -163,10 +163,10 @@ class AwsBatch101Stack(core.Stack):
         )
         jobQueue.add_depends_on(computeEnvironment)
 
-        lambdaFunction = lamda.Function(
+        uploadFunction = lamda.Function(
             self,
-            "lambda-function",
-            function_name=functionName,
+            "upload-function",
+            function_name="batch-upload-lambda",
             code=lamda.Code.from_inline('''
 import os
 import uuid
@@ -184,7 +184,7 @@ def lambda_handler(event, context):
                         jobName=job_name,
                         jobQueue=os.environ['JOB_QUEUE'],
                         jobDefinition=os.environ['JOB_DEFINITION'],
-                        parameters={"job_name":job_name}
+                        parameters={"key":job_name}
     )
     print(response)
 '''),
@@ -197,9 +197,49 @@ def lambda_handler(event, context):
             initial_policy=[jobSubmitStatement]
         )
 
-        rule = events.Rule(
+        # rule = events.Rule(
+        #     self,
+        #     'event-rule',
+        #     schedule=events.Schedule.expression('rate(4 hours)')
+        # )
+        # rule.add_target(targets.LambdaFunction(uploadFunction))
+        downloadFunction = lamda.Function(
             self,
-            'event-rule',
-            schedule=events.Schedule.expression('rate(4 hours)')
+            "download-function",
+            function_name="batch-download-lambda",
+            code=lamda.Code.from_inline('''
+import os
+import datetime as dt
+import boto3
+from botocore.config import Config
+
+region = os.environ['AWS_REGION']
+my_config = Config(region_name=region)
+client = boto3.client('batch', config=my_config)
+s3 = boto3.resource("s3")
+bucket = s3.Bucket(os.environ['BUCKET_NAME'])
+
+def lambda_handler(event, context):
+    for key in bucket.objects.all():
+        job_name = f"download-{dt.datetime.now().strftime('%Y%m%d-%H%M%s')}-{key}"
+        response = client.submit_job(
+                            jobName=job_name,
+                            jobQueue=os.environ['JOB_QUEUE'],
+                            jobDefinition=os.environ['JOB_DEFINITION'],
+                                            parameters={
+                                                "key":, key,
+                                                "direction" : "download
+                                           }
         )
-        rule.add_target(targets.LambdaFunction(lambdaFunction))
+        print(response)
+'''),
+            handler="index.lambda_handler",
+            timeout=core.Duration.seconds(60),
+            runtime=lamda.Runtime.PYTHON_3_9,
+            environment={
+                "BUCKET_NAME": bucket.bucket_name,
+                "JOB_DEFINITION": jobDefinitionName,
+                "JOB_QUEUE": jobQueueName
+            },
+            initial_policy=[jobSubmitStatement]
+        )
