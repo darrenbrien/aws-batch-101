@@ -109,11 +109,11 @@ class AwsBatch101Stack(core.Stack):
             security_group_ids=[fsx_security_group.security_group_id],
             tags=[core.CfnTag(key="Name", value="fsx-lustre")],
             lustre_configuration=fsx.CfnFileSystem.LustreConfigurationProperty(
-                auto_import_policy="NONE",
+                auto_import_policy="NEW_CHANGED",
                 deployment_type="SCRATCH_2",
                 data_compression_type="LZ4",
                 import_path=f"s3://{bucket.bucket_name}/",
-                export_path=f"s3://{bucket.bucket_name}/fsx",
+                export_path=f"s3://{bucket.bucket_name}/",
             ),
         )
 
@@ -195,7 +195,7 @@ runcmd:
             retry_strategy=batch.CfnJobDefinition.RetryStrategyProperty(
                 attempts=3),
             timeout=batch.CfnJobDefinition.TimeoutProperty(
-                attempt_duration_seconds=60),
+                attempt_duration_seconds=600),
             parameters={
                 "key": "no one",
                 "bucket": bucket.bucket_name,
