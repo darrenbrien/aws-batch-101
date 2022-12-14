@@ -39,7 +39,7 @@ class AwsBatch101Stack(core.Stack):
                     service=ec2.GatewayVpcEndpointAwsService.S3
                 )
             },
-            max_azs=3,
+            max_azs=1,
         )
 
         sg = ec2.SecurityGroup(self, "sg", vpc=vpc)
@@ -47,6 +47,12 @@ class AwsBatch101Stack(core.Stack):
         s3RoleStatement = iam.PolicyStatement(
             effect=iam.Effect.ALLOW,
             actions=["s3:*"],
+            resources=["*"]
+        )
+
+        fsxRoleStatement = iam.PolicyStatement(
+            effect=iam.Effect.ALLOW,
+            actions=["fsx:*"],
             resources=["*"]
         )
 
@@ -125,6 +131,7 @@ class AwsBatch101Stack(core.Stack):
         )
         instanceRole.add_to_policy(stsAssumeRoleStatement)
         instanceRole.add_to_policy(s3RoleStatement)
+        instanceRole.add_to_policy(fsxRoleStatement)
 
         fsx_directory = '/fsx'
         fsx_user_data = f"""MIME-Version: 1.0
@@ -148,7 +155,6 @@ runcmd:
                 user_data=core.Fn.base64(fsx_user_data)
             )
         )
-        print(core.Fn.base64(fsx_user_data))
 
         asset = DockerImageAsset(self,
                                  "MyBuildImage",
@@ -170,7 +176,9 @@ runcmd:
                 batch.CfnJobDefinition.EnvironmentProperty(
                     name="BATCH_FILE_TYPE", value="zip"),
                 batch.CfnJobDefinition.EnvironmentProperty(
-                    name="BATCH_FILE_S3_URL", value=script_asset.s3_object_url)
+                    name="BATCH_FILE_S3_URL", value=script_asset.s3_object_url),
+                batch.CfnJobDefinition.EnvironmentProperty(
+                    name="FSX_ID", value=fsx_filesystem.ref)
             ],
             image=asset.image_uri,
             resource_requirements=resource_requirement,
@@ -202,6 +210,7 @@ runcmd:
                 "direction": "upload"
             }
         )
+        jobDefinition.add_depends_on(fsx_filesystem)
 
         computeResources = batch.CfnComputeEnvironment.ComputeResourcesProperty(
             minv_cpus=0,

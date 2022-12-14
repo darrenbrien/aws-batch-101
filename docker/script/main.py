@@ -1,10 +1,12 @@
 #!/usr/bin/env python
+import os
 import time
 import random
 import logging
 from io import BytesIO
 from hashlib import sha256
 import boto3
+from botocore.config import Config
 import sys
 
 
@@ -114,16 +116,29 @@ def write(key):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
-    try:
-        _, bucket, key, rest, *_ = sys.argv
-        client = boto3.client("s3")
-        if rest == "download":
-            download(client, bucket, key)
-        elif rest == "upload":
-            upload(client, bucket, key)
-        elif rest == "fsx-up":
-            write(key)
-        else:
-            read(key)
-    except Exception:
-        logging.exception("Failed to transfer data to/from bucket")
+    fsx_id = os.environ['FSX_ID']
+    _, bucket, key, rest, *_ = sys.argv
+    client = boto3.client("s3")
+    logging.info(f"job command:{rest} s3://{bucket}/{key} {fsx_id}")
+    if rest == "download":
+        download(client, bucket, key)
+    elif rest == "upload":
+        upload(client, bucket, key)
+    elif rest == "fsx-upload":
+        region = "us-east-1"
+        my_config = Config(region_name=region)
+        fsx_client = boto3.client("fsx", config=my_config)
+        write(key)
+        fsx_client.create_data_repository_task(
+            Type='EXPORT_TO_REPOSITORY',
+            Paths=[
+                key,
+            ],
+            FileSystemId=fsx_id,
+            Report={
+                'Enabled': False,
+            },
+        )
+    else:
+        # if rest == "fsx-download"
+        read(key)
