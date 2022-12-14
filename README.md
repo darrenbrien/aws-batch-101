@@ -2,7 +2,7 @@
 # Welcome to your CDK Python project!
 
 You should explore the contents of this project. It demonstrates a CDK app with an instance of a stack (`aws_batch_101_stack`)
-which contains an Amazon SQS queue that is subscribed to an Amazon SNS topic.
+which contains a VPC and EC2 instance which process AWS batch jobs demonstrating the performance difference between efx Lustre and using S3 directly for data processing.
 
 The `cdk.json` file tells the CDK Toolkit how to execute your app.
 
